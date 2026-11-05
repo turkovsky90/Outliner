@@ -818,9 +818,12 @@ function zoomIn(id) {
 }
 
 function zoomOut() {
-  rootItemId = null;
-  if (history.replaceState) history.replaceState(null, null, window.location.pathname + window.location.search);
-  render();
+  if (window.location.hash) {
+    history.back();
+  } else {
+    rootItemId = null;
+    render();
+  }
 }
 
 window.addEventListener('hashchange', () => {
