@@ -813,7 +813,7 @@ function zoomIn(id) {
   if (getText(loc.item.html).length === 0 && loc.item.children.length === 0) return;
 
   rootItemId = id;
-  if (history.replaceState) history.replaceState(null, null, '#' + id);
+  if (history.pushState) history.pushState(null, null, '#' + id);
   render();
 }
 
