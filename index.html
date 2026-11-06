@@ -34,7 +34,6 @@ body{
   font-size:var(--fs-base);
   line-height:1.5;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
-  min-height:100vh;
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
 }
@@ -42,7 +41,7 @@ body.is-touch-dragging {
   overflow: hidden;
 }
 
-#layout{display:flex;min-height:100vh}
+#layout{display:flex}
 #sidebar{
   width:275px;
   flex-shrink:0;
@@ -714,6 +713,8 @@ body.multi-select-active .drag-handle {
 
 <div id="context-menu" class="hidden">
   <button data-action="select">Select</button>
+  <button data-action="move-up">Move up</button>
+  <button data-action="move-down">Move down</button>
   <button data-action="duplicate">Duplicate</button>
   <button data-action="delete">Delete</button>
 </div>
@@ -776,9 +777,10 @@ let searchRaw = '';
 let searchMatches = new Set();
 let searchAncestors = new Set();
 
-let draggedIds = [];
 let touchDragItems = [];
 let isGlobalTouchDragging = false;
+let pointerDragInfo = null;
+let justDragged = false;
 
 let apiKey = '';
 let binId = '';
@@ -821,12 +823,6 @@ function stopAutoScroll() {
   }
   scrollSpeed = 0;
 }
-
-document.addEventListener('dragover', (e) => {
-  if (dragId) {
-    handleAutoScroll(e.clientY);
-  }
-});
 
 const genId = () => Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
 const newItem = () => ({ id: genId(), html: '', children: [], collapsed: false, done: false, completedCollapsed: true });
@@ -1228,6 +1224,7 @@ function isDescendant(item, id){
 }
 
 let contextTargetId = null;
+let contextFromZoom = false;
 const ctxMenu = document.getElementById('context-menu');
 
 document.addEventListener('contextmenu', (e) => {
@@ -1237,6 +1234,7 @@ document.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     const itemEl = row.closest('.item');
     contextTargetId = itemEl.dataset.id;
+    contextFromZoom = false;
     showContextMenu(e.clientX, e.clientY);
   }
 });
@@ -1253,6 +1251,7 @@ document.addEventListener('touchstart', (e) => {
     window.ctxTouchTimer = setTimeout(() => {
       const itemEl = row.closest('.item');
       contextTargetId = itemEl.dataset.id;
+      contextFromZoom = false;
       showContextMenu(touch.clientX, touch.clientY);
       if (navigator.vibrate) navigator.vibrate(30);
     }, 600);
@@ -1267,6 +1266,14 @@ document.addEventListener('touchmove', (e) => {
 });
 
 function showContextMenu(x, y) {
+  const selectBtn = ctxMenu.querySelector('[data-action="select"]');
+  const upBtn = ctxMenu.querySelector('[data-action="move-up"]');
+  const downBtn = ctxMenu.querySelector('[data-action="move-down"]');
+  const hide = contextFromZoom;
+  if (selectBtn) selectBtn.style.display = hide ? 'none' : '';
+  if (upBtn) upBtn.style.display = hide ? 'none' : '';
+  if (downBtn) downBtn.style.display = hide ? 'none' : '';
+
   ctxMenu.classList.remove('hidden');
   ctxMenu.style.left = Math.min(x, window.innerWidth - 160) + 'px';
   ctxMenu.style.top = Math.min(y, window.innerHeight - 150) + 'px';
@@ -1294,6 +1301,10 @@ ctxMenu.addEventListener('click', (e) => {
     toggleSelect(contextTargetId);
   } else if (action === 'delete') {
     deleteItem(loc.item);
+  } else if (action === 'move-up') {
+    if (moveUp(loc.item)) { save(); render(); }
+  } else if (action === 'move-down') {
+    if (moveDown(loc.item)) { save(); render(); }
   }
 });
 
@@ -1312,6 +1323,7 @@ document.getElementById('zoom-menu-btn').addEventListener('click', (e) => {
   e.stopPropagation();
   if (!rootItemId) return;
   contextTargetId = rootItemId;
+  contextFromZoom = true;
   const rect = e.currentTarget.getBoundingClientRect();
   showContextMenu(rect.right - 150, rect.bottom + 8);
 });
@@ -1571,6 +1583,17 @@ document.getElementById('clear-completed').addEventListener('click', (e) => {
 function startTouchDrag(item, x, y) {
   isPulling = false;
   isGlobalTouchDragging = true;
+  
+  ctxMenu.classList.add('hidden');
+  
+  if (document.activeElement && document.activeElement.isContentEditable) {
+    document.activeElement.blur();
+  }
+  
+  if (window.getSelection) {
+    try { window.getSelection().removeAllRanges(); } catch(e){}
+  }
+  
   if (selectedIds.size > 0 && selectedIds.has(item.id)) {
     let idsToDrag = Array.from(selectedIds).filter(id => {
       let loc = find(id);
@@ -1616,6 +1639,7 @@ function moveTouchDrag(x, y) {
 
 function endTouchDrag() {
   stopAutoScroll();
+  const wasActive = isGlobalTouchDragging;
   isGlobalTouchDragging = false;
   document.body.classList.remove('is-touch-dragging');
   
@@ -1651,6 +1675,11 @@ function endTouchDrag() {
   
   document.querySelectorAll('.drop-before, .drop-after, .drop-inside').forEach(r => r.classList.remove('drop-before', 'drop-after', 'drop-inside'));
   touchDragItems = [];
+  
+  if (wasActive) {
+    justDragged = true;
+    setTimeout(() => { justDragged = false; }, 100);
+  }
 }
 
 function render(){
@@ -1799,26 +1828,39 @@ function renderItem(item, depth){
     }, { passive: false });
   }
 
-  let touchTimer;
+  // Touch drag state (per-row)
+  let touchTimer = null;
   let touchStartX = 0;
   let touchStartY = 0;
+  let touchMoved = false;
+  let touchHoldFired = false;
   let isSwiping = false;
 
   row.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
     if (e.target.closest('.zoom-btn')) return;
+    if (e.target.closest('input')) return;
+    if (e.target.closest('.toggle')) return;
+    if (item.isDraft || item.done) return;
     
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
+    touchMoved = false;
     isSwiping = false;
+    touchHoldFired = false;
+    clearTimeout(touchTimer);
     
-    const isHandle = e.target.closest('.drag-handle');
-
-    if (selectedIds.size > 0 || isHandle) {
+    const isHandle = !!e.target.closest('.drag-handle');
+    const isMulti = selectedIds.size > 0 && selectedIds.has(item.id);
+    const immediate = isHandle || isMulti;
+    
+    if (immediate) {
+      touchHoldFired = true;
+    } else {
       touchTimer = setTimeout(() => {
-        startTouchDrag(item, touchStartX, touchStartY);
+        touchHoldFired = true;
         if (navigator.vibrate) navigator.vibrate(20);
-      }, 500);
+      }, 300);
     }
   }, {passive: true});
 
@@ -1829,12 +1871,23 @@ function renderItem(item, depth){
     const touch = e.touches[0];
     const dx = touch.clientX - touchStartX;
     const dy = touch.clientY - touchStartY;
+    const dist = Math.hypot(dx, dy);
 
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+    if (dist > 10) touchMoved = true;
+
+    if (touchHoldFired && touchMoved) {
+      clearTimeout(touchTimer);
+      isSwiping = true;
+      startTouchDrag(item, touchStartX, touchStartY);
+      moveTouchDrag(touch.clientX, touch.clientY);
+      return;
+    }
+
+    if (touchMoved && !touchHoldFired) {
       clearTimeout(touchTimer);
     }
 
-    if (!isSwiping && selectedIds.size === 0) {
+    if (!isSwiping && !touchHoldFired && selectedIds.size === 0) {
       if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) {
         isSwiping = true;
         clearTimeout(touchTimer);
@@ -1854,7 +1907,16 @@ function renderItem(item, depth){
     clearTimeout(touchTimer);
   });
 
+  row.addEventListener('touchcancel', (e) => {
+    clearTimeout(touchTimer);
+  });
+
   row.addEventListener('click', (e) => {
+    if (justDragged) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (selectedIds.size > 0 && !window.matchMedia('(pointer: fine)').matches) {
       e.preventDefault();
       e.stopPropagation();
@@ -1886,10 +1948,12 @@ function renderItem(item, depth){
   handle.className = 'drag-handle';
   handle.textContent = '⠿';
   if (item.isDraft) handle.style.visibility = 'hidden';
-  handle.draggable = !item.done && !isMultiSelectMode && !item.isDraft;
-  handle.addEventListener('dragstart', e => startDrag(e, item));
-  handle.addEventListener('dragend', endDrag);
   handle.addEventListener('click', (e) => {
+    if (justDragged) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     if (item.isDraft) return;
@@ -2045,12 +2109,41 @@ function renderItem(item, depth){
 
   row.appendChild(actionBtns);
 
-  row.addEventListener('dragover', e => onDragOver(e, item, row));
-  row.addEventListener('dragleave', e => {
-    if (e.currentTarget.contains(e.relatedTarget)) return;
-    row.classList.remove('drop-before','drop-after','drop-inside');
+  // Pointer (mouse/pen) drag — any area (hold required) or handle (immediate)
+  row.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') return;
+    if (e.button !== 0) return;
+    if (e.target.closest('input, .toggle, .zoom-btn')) return;
+    if (item.isDraft || item.done) return;
+    
+    const isHandle = !!e.target.closest('.drag-handle');
+    const isMulti = selectedIds.size > 0 && selectedIds.has(item.id);
+    const immediate = isHandle || isMulti;
+    
+    if (pointerDragInfo) {
+      clearTimeout(pointerDragInfo.timer);
+    }
+    
+    pointerDragInfo = {
+      item,
+      startX: e.clientX,
+      startY: e.clientY,
+      pointerId: e.pointerId,
+      active: false,
+      immediate,
+      holdFired: immediate,
+      movedBeforeHold: false,
+      timer: null
+    };
+    
+    if (!immediate) {
+      pointerDragInfo.timer = setTimeout(() => {
+        if (pointerDragInfo && !pointerDragInfo.active && !pointerDragInfo.movedBeforeHold) {
+          pointerDragInfo.holdFired = true;
+        }
+      }, 300);
+    }
   });
-  row.addEventListener('drop', e => onDrop(e, item, row));
 
   el.appendChild(row);
 
@@ -2065,6 +2158,55 @@ function renderItem(item, depth){
 
   return el;
 }
+
+document.addEventListener('pointermove', (e) => {
+  if (!pointerDragInfo || e.pointerId !== pointerDragInfo.pointerId) return;
+  if (e.pointerType === 'touch') return;
+
+  const dx = e.clientX - pointerDragInfo.startX;
+  const dy = e.clientY - pointerDragInfo.startY;
+  const dist = Math.hypot(dx, dy);
+
+  if (pointerDragInfo.active) {
+    e.preventDefault();
+    moveTouchDrag(e.clientX, e.clientY);
+    return;
+  }
+
+  if (dist > 8) {
+    if (pointerDragInfo.holdFired) {
+      pointerDragInfo.active = true;
+      clearTimeout(pointerDragInfo.timer);
+      if (navigator.vibrate) navigator.vibrate(20);
+      startTouchDrag(pointerDragInfo.item, e.clientX, e.clientY);
+      moveTouchDrag(e.clientX, e.clientY);
+    } else {
+      clearTimeout(pointerDragInfo.timer);
+      pointerDragInfo.movedBeforeHold = true;
+    }
+  }
+}, { passive: false });
+
+document.addEventListener('pointerup', (e) => {
+  if (!pointerDragInfo || e.pointerId !== pointerDragInfo.pointerId) return;
+  if (e.pointerType === 'touch') return;
+
+  if (pointerDragInfo.active) {
+    endTouchDrag();
+  }
+
+  clearTimeout(pointerDragInfo.timer);
+  pointerDragInfo = null;
+});
+
+document.addEventListener('pointercancel', (e) => {
+  if (!pointerDragInfo || e.pointerId !== pointerDragInfo.pointerId) return;
+  if (pointerDragInfo.active) {
+    endTouchDrag();
+  }
+  clearTimeout(pointerDragInfo.timer);
+  pointerDragInfo = null;
+});
 
 function onKeyDown(e, item, content){
   if (item.isDraft) {
@@ -2325,106 +2467,6 @@ function deleteItem(item) {
 function toggleDone(item){
   backupState = JSON.parse(JSON.stringify({ items }));
   item.done = !item.done;
-  save(); render();
-}
-
-let dragId = null;
-function startDrag(e, item){
-  if (item.done || item.isDraft){ e.preventDefault(); return; }
-  
-  if (selectedIds.size > 0 && selectedIds.has(item.id)) {
-    let idsToDrag = Array.from(selectedIds).filter(id => {
-      let loc = find(id);
-      while (loc && loc.parent) {
-        if (selectedIds.has(loc.parent.id)) return false;
-        loc = find(loc.parent.id);
-      }
-      return true;
-    });
-    draggedIds = idsToDrag;
-  } else {
-    selectedIds.clear();
-    document.querySelectorAll('.item.selected').forEach(el => el.classList.remove('selected'));
-    draggedIds = [item.id];
-  }
-  
-  dragId = item.id;
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', draggedIds.join(','));
-  
-  for (let id of draggedIds) {
-    const el = document.querySelector('.item[data-id="'+id+'"]');
-    if (el) setTimeout(() => el.classList.add('dragging'), 0);
-  }
-}
-
-function endDrag(){
-  stopAutoScroll();
-  dragId = null;
-  draggedIds = [];
-  document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
-  document.querySelectorAll('.drop-before,.drop-after,.drop-inside')
-    .forEach(el => el.classList.remove('drop-before','drop-after','drop-inside'));
-}
-
-function onDragOver(e, item, row){
-  if (!dragId || item.done || item.isDraft) return;
-  e.preventDefault();
-  e.stopPropagation();
-  handleAutoScroll(e.clientY);
-  
-  for (let id of draggedIds) {
-    const loc = find(id);
-    if (!loc) continue;
-    if (id === item.id || isDescendant(loc.item, item.id)) return;
-  }
-
-  const r = row.getBoundingClientRect();
-  const y = e.clientY - r.top;
-  const h = r.height;
-  row.classList.remove('drop-before','drop-after','drop-inside');
-  if (y < h * 0.25) row.classList.add('drop-before');
-  else if (y > h * 0.75) row.classList.add('drop-after');
-  else row.classList.add('drop-inside');
-}
-
-function onDrop(e, item, row){
-  e.preventDefault();
-  e.stopPropagation();
-  row.classList.remove('drop-before','drop-after','drop-inside');
-  if (!dragId || item.done || item.isDraft) return;
-
-  for (let id of draggedIds) {
-    const loc = find(id);
-    if (!loc) continue;
-    if (id === item.id || isDescendant(loc.item, item.id)) return;
-  }
-
-  const r = row.getBoundingClientRect();
-  const y = e.clientY - r.top;
-  const h = r.height;
-
-  const itemsToMove = draggedIds.map(id => find(id)).filter(loc => loc).map(loc => loc.item);
-
-  for (let id of draggedIds) {
-    const loc = find(id);
-    if (loc) loc.arr.splice(loc.index, 1);
-  }
-
-  const dst = find(item.id);
-  if (!dst) return;
-
-  if (y > h * 0.25 && y < h * 0.75) {
-    dst.item.children.push(...itemsToMove);
-    dst.item.collapsed = false;
-  } else {
-    let insertIndex = dst.index + (y > h * 0.75 ? 1 : 0);
-    dst.arr.splice(insertIndex, 0, ...itemsToMove);
-  }
-
-  selectedIds.clear();
-  document.querySelectorAll('.item.selected').forEach(el => el.classList.remove('selected'));
-  draggedIds = [];
   save(); render();
 }
 
