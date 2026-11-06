@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Outliner</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzBkMGQxMiIvPjxwYXRoIGQ9Ik0gMTIuNSAzMCBMIDU3LjUgMzAgTSAyNy41IDUwIEwgNzIuNSA1MCBNIDQyLjUgNzAgTCA4Ny41IDcwIiBzdHJva2U9IiNhMDZiZmYiIHN0cm9rZS13aWR0aD0iMTAiLz48L3N2Zz4=">
 <style>
 :root{
   --bg: #0d0d12;
@@ -24,6 +25,7 @@
   --fs-base: 16px;
   --fs-small: 13px;
   --fs-tiny: 11px;
+  --line-h: 26px;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
@@ -31,7 +33,7 @@ body{
   background:var(--bg);color:var(--text);
   font-size:var(--fs-base);
   line-height:1.5;
-  font-family: ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Code', 'Roboto Mono', 'Courier New', monospace;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
   min-height:100vh;
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
@@ -71,9 +73,14 @@ body.is-touch-dragging {
 #sb-close:hover { color: var(--text); background: rgba(255,255,255,0.04); }
 
 .hints{
-  margin:0;font-family:inherit;
+  margin:0;
   font-size:var(--fs-small);
-  white-space:pre;color:var(--dim);line-height:1.8;
+  color:var(--dim);
+  display:grid;
+  grid-template-columns:max-content 1fr;
+  column-gap:12px;
+  row-gap:2px;
+  line-height:1.7;
 }
 
 .sync-settings {
@@ -265,6 +272,7 @@ body.is-touch-dragging {
   min-height: 26px;
   margin-left: 4px;
 }
+#zoom-title:not(:focus) .marker { display: none; }
 
 #zoom-menu-btn {
   background: none; border: none; color: var(--dim); cursor: pointer;
@@ -336,7 +344,8 @@ body.is-touch-dragging {
   width:19px;text-align:center;font-size:var(--fs-tiny);cursor:pointer;color:var(--dim);
   flex-shrink:0;user-select:none;
   display: flex; align-items: center; justify-content: center;
-  margin-top: 5px;
+  height: var(--line-h);
+  margin-top: 0;
 }
 .toggle:hover{color:var(--accent)}
 
@@ -346,7 +355,8 @@ body.is-touch-dragging {
   font-size:15px;line-height:1;
   color:var(--dim);user-select:none;cursor:grab;
   opacity:0;transition:opacity .1s;
-  margin-top: 5px;
+  height: var(--line-h);
+  margin-top: 0;
 }
 .row:hover .drag-handle{opacity:1}
 .drag-handle:active{cursor:grabbing}
@@ -363,7 +373,7 @@ input[type="checkbox"] {
   position: relative;
   outline: none;
   flex-shrink: 0;
-  margin: 4px 0 0 0;
+  margin: calc((var(--line-h) - 16px) / 2) 0 0 0;
   transition: background .15s, border-color .15s;
 }
 input[type="checkbox"]:checked {
@@ -381,6 +391,13 @@ input[type="checkbox"]:checked::after {
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
+input[type="checkbox"].cb-red { border-color: var(--red); }
+input[type="checkbox"].cb-red:checked { background: var(--red); border-color: var(--red); }
+input[type="checkbox"].cb-yellow { border-color: var(--yellow); }
+input[type="checkbox"].cb-yellow:checked { background: var(--yellow); border-color: var(--yellow); }
+input[type="checkbox"].cb-blue { border-color: var(--blue); }
+input[type="checkbox"].cb-blue:checked { background: var(--blue); border-color: var(--blue); }
+
 .item.done input[type="checkbox"]:checked {
   background: var(--dim);
   border-color: var(--dim);
@@ -388,13 +405,13 @@ input[type="checkbox"]:checked::after {
 
 .draft-plus {
   width: 16px;
-  height: 16px;
+  height: var(--line-h);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin: 4px 0 0 0;
-  color: var(--accent);
+  margin: 0;
+  color: var(--text);
   font-size: 16px;
   line-height: 1;
   font-weight: bold;
@@ -428,9 +445,6 @@ input[type="checkbox"]:checked::after {
 .content[data-empty="true"]::before{
   content:'New item...';color:var(--dim);pointer-events:none;
 }
-.content.red{color:var(--red)}
-.content.yellow{color:var(--yellow)}
-.content.blue{color:var(--blue)}
 
 .date-highlight { color: var(--accent) !important; }
 .link{color:var(--blue) !important;text-decoration:underline;text-underline-offset:2px}
@@ -488,6 +502,9 @@ body.multi-select-active .action-btns {
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
+}
+body.multi-select-active .drag-handle {
+  opacity: 1;
 }
 
 .item.dragging{opacity:.35}
@@ -577,22 +594,24 @@ body.multi-select-active .action-btns {
 <div id="layout">
   <aside id="sidebar">
     <button id="sb-close" title="Close">×</button>
-    <pre class="hints">Enter        new item
-Shift+Enter  subtask
-Tab          indent
-Shift+Tab    outdent
-Alt+↑/↓      move up/down
-Ctrl+Enter   line break
-Ctrl+B       bold
-Ctrl+I       italic
-Ctrl+U       underline
-Ctrl+Shift+X strikethrough
-Del          delete item
-!!!text      red
-!!text       yellow
-!text        blue
-Esc          deselect / close panel
-Swipe down   force sync</pre>
+    <div class="hints">
+      <span>Enter</span><span>new item</span>
+      <span>Shift+Enter</span><span>subtask</span>
+      <span>Tab</span><span>indent</span>
+      <span>Shift+Tab</span><span>outdent</span>
+      <span>Alt+↑/↓</span><span>move up/down</span>
+      <span>Ctrl+Enter</span><span>line break</span>
+      <span>Ctrl+B</span><span>bold</span>
+      <span>Ctrl+I</span><span>italic</span>
+      <span>Ctrl+U</span><span>underline</span>
+      <span>Ctrl+Shift+X</span><span>strikethrough</span>
+      <span>Del</span><span>delete item</span>
+      <span>!!!text</span><span>red</span>
+      <span>!!text</span><span>yellow</span>
+      <span>!text</span><span>blue</span>
+      <span>Esc</span><span>deselect / close panel</span>
+      <span>Swipe down</span><span>force sync</span>
+    </div>
 
     <div class="sync-settings">
       <h3>JSONBin Sync</h3>
@@ -721,6 +740,7 @@ let items = [];
 let sidebarCollapsed = true;
 let completedCollapsed = true;
 let selectedIds = new Set();
+let selectionAnchorId = null;
 let backupState = null;
 let toastTimer = null;
 let activeEditable = null;
@@ -1046,6 +1066,12 @@ function colorClass(text){
   if (/(^|\s|\n)!!(?=\s|\n|$|[.,!?;:])/.test(text)) return 'yellow';
   if (/(^|\s|\n)!(?=\s|\n|$|[.,!?;:])/.test(text)) return 'blue';
   return '';
+}
+
+function setCbColor(cb, color){
+  if (!cb || !cb.classList) return;
+  cb.classList.remove('cb-red', 'cb-yellow', 'cb-blue');
+  if (color) cb.classList.add('cb-' + color);
 }
 
 function wrapMarker(html){
@@ -1401,6 +1427,7 @@ function updateMultiBar() {
     document.getElementById('toast').classList.remove('visible');
     clearInterval(toastTimer);
   } else {
+    selectionAnchorId = null;
     bar.classList.remove('visible');
     document.body.classList.remove('multi-select-active');
   }
@@ -1416,6 +1443,31 @@ function toggleSelect(id) {
     for (const i of allIds) selectedIds.delete(i);
   } else {
     for (const i of allIds) selectedIds.add(i);
+  }
+  updateMultiBar();
+  render();
+}
+
+function getFlatSelectableIds() {
+  return Array.from(document.querySelectorAll('#outline .item[data-id], #completed-list .item[data-id]'))
+    .filter(el => el.dataset.id !== 'draft' && el.getClientRects().length > 0)
+    .map(el => el.dataset.id);
+}
+
+function selectRange(anchorId, targetId) {
+  const ids = getFlatSelectableIds();
+  let a = ids.indexOf(anchorId);
+  let b = ids.indexOf(targetId);
+  if (a === -1 || b === -1) {
+    toggleSelect(targetId);
+    return;
+  }
+  if (a > b) { const t = a; a = b; b = t; }
+  selectedIds.clear();
+  for (let k = a; k <= b; k++) {
+    const loc = find(ids[k]);
+    if (!loc) continue;
+    for (const id of getAllDescendantIds(loc.item)) selectedIds.add(id);
   }
   updateMultiBar();
   render();
@@ -1579,6 +1631,7 @@ function render(){
       zoomTitle.innerHTML = wrapMarker(target.item.html || '');
       highlightDOM(zoomTitle);
       zoomCb.checked = !!target.item.done;
+      setCbColor(zoomCb, colorClass(getText(target.item.html)));
       
       contextArr = target.item.children;
       isCollapsed = target.item.completedCollapsed;
@@ -1597,6 +1650,7 @@ function render(){
     
     zoomTitle.contentEditable = 'false';
     zoomTitle.textContent = 'Home';
+    setCbColor(zoomCb, '');
     
     contextArr = items;
     isCollapsed = completedCollapsed;
@@ -1642,6 +1696,8 @@ function applySidebarState(){
 
 function renderItem(item, depth){
   const isMultiSelectMode = selectedIds.size > 0;
+  const raw = getText(item.html);
+  const itemColor = colorClass(raw);
 
   const el = document.createElement('div');
   el.className = 'item';
@@ -1723,8 +1779,9 @@ function renderItem(item, depth){
     clearTimeout(touchTimer);
   });
 
+  // Desktop: selection only via drag handle. Touch: tap row toggles selection.
   row.addEventListener('click', (e) => {
-    if (selectedIds.size > 0) {
+    if (selectedIds.size > 0 && !window.matchMedia('(pointer: fine)').matches) {
       e.preventDefault();
       e.stopPropagation();
       toggleSelect(item.id);
@@ -1754,11 +1811,15 @@ function renderItem(item, depth){
   handle.draggable = !item.done && !isMultiSelectMode && !item.isDraft;
   handle.addEventListener('dragstart', e => startDrag(e, item));
   handle.addEventListener('dragend', endDrag);
-  handle.addEventListener('mousedown', (e) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      e.stopPropagation();
+  handle.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (item.isDraft) return;
+    if (e.shiftKey && selectionAnchorId) {
+      selectRange(selectionAnchorId, item.id);
+    } else {
       toggleSelect(item.id);
+      selectionAnchorId = selectedIds.size > 0 ? item.id : null;
     }
   });
   row.appendChild(handle);
@@ -1772,6 +1833,7 @@ function renderItem(item, depth){
     cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = !!item.done;
+    setCbColor(cb, itemColor);
     cb.addEventListener('change', () => {
       if (selectedIds.size > 0) {
         cb.checked = !!item.done;
@@ -1787,8 +1849,7 @@ function renderItem(item, depth){
   content.spellcheck = false;
   content.dataset.id = item.id;
 
-  const raw = getText(item.html);
-  content.className = 'content ' + colorClass(raw);
+  content.className = 'content';
   content.innerHTML = wrapMarker(item.html || '');
   highlightDOM(content);
   
@@ -1817,7 +1878,8 @@ function renderItem(item, depth){
     item.html = formatContentHTML(content);
     
     const currentRaw = getText(content);
-    content.className = 'content ' + colorClass(currentRaw);
+    content.className = 'content';
+    if (!item.isDraft) setCbColor(cb, colorClass(currentRaw));
     
     if (item.isDraft) {
       if (currentRaw.length > 0) delete content.dataset.empty;
@@ -2251,11 +2313,13 @@ function init(){
   });
 
   const zoomTitle = document.getElementById('zoom-title');
+  const zoomCbEl = document.getElementById('zoom-checkbox');
   zoomTitle.addEventListener('input', () => {
     if (!rootItemId) return;
     const target = find(rootItemId);
     if (target) {
       target.item.html = formatContentHTML(zoomTitle);
+      setCbColor(zoomCbEl, colorClass(getText(target.item.html)));
       save();
     }
   });
@@ -2266,6 +2330,7 @@ function init(){
       target.item.html = formatContentHTML(zoomTitle);
       zoomTitle.innerHTML = wrapMarker(target.item.html);
       highlightDOM(zoomTitle);
+      setCbColor(zoomCbEl, colorClass(getText(target.item.html)));
       save();
     }
   });
